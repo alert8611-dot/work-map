@@ -21,66 +21,72 @@
     <div id="map"></div>
 
     <script>
+        // ---------------------------
+        // 🔑 VWorld 개발용 API 키
+        // ---------------------------
         const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
 
         let map;
         let markers = [];
 
         function initMap() {
-            const center = { lat: 36.4800, lng: 127.2890 };
+
+            const center = { lat: 36.4800, lng: 127.2890 }; // 세종 기준
 
             map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 15,
+                zoom: 14,
                 center: center,
-                mapTypeId: "hybrid"
             });
 
+            // 첫 도근점 로드
             loadGeogung(center);
 
+            // 지도 이동 후 중심 변경되면 다시 로드
             google.maps.event.addListener(map, "idle", function () {
                 const c = map.getCenter();
                 loadGeogung({ lat: c.lat(), lng: c.lng() });
             });
         }
 
+        // -----------------------------------------
+        // 📌 도근점 20개 가져오기 (운영/개발 무관하게 작동)
+        // -----------------------------------------
         function loadGeogung(center) {
-            const url = `
-                https://api.vworld.kr/req/wfs?
-                key=${VWORLD_KEY}
-                &service=WFS
-                &request=GetFeature
-                &version=2.0.0
-                &typeNames=lp_pa_cbnd
-                &count=20
-                &srsName=EPSG:5179
-                &bbox=${center.lng - 500},${center.lat - 500},
-                      ${center.lng + 500},${center.lat + 500},
-                      EPSG:5179
-            `.replace(/\s+/g, "");
+
+            const xmin = center.lng - 0.01;
+            const ymin = center.lat - 0.01;
+            const xmax = center.lng + 0.01;
+            const ymax = center.lat + 0.01;
+
+            const url =
+                `https://api.vworld.kr/req/wfs?` +
+                `key=${VWORLD_KEY}` +
+                `&service=WFS` +
+                `&version=2.0.0` +
+                `&request=GetFeature` +
+                `&typeNames=lp_pa_cbnd@korea` +
+                `&count=20` +
+                `&srsName=EPSG:4326` +
+                `&bbox=${xmin},${ymin},${xmax},${ymax},EPSG:4326`;
 
             fetch(url)
                 .then(res => res.json())
-                .then(json => {
+                .then(data => {
 
-                    if (!json.response || !json.response.result)
-                        return;
+                    if (!data.response?.result?.featureCollection?.features) return;
 
-                    const features = json.response.result.featureCollection.features;
+                    const features = data.response.result.featureCollection.features;
 
+                    // 기존 마커 제거
                     markers.forEach(m => m.setMap(null));
                     markers = [];
 
+                    // 마커 표시
                     features.forEach(f => {
-                        if (!f.geometry || !f.geometry.coordinates)
-                            return;
-
-                        const [x, y] = f.geometry.coordinates;
-
-                        // EPSG:5179 → EPSG:4326 변환(중부원점)
-                        const conv = convert5179ToWgs84(x, y);
+                        const [lng, lat] = f.geometry.coordinates;
 
                         const marker = new google.maps.Marker({
-                            position: conv,
+                            position: { lat, lng },
                             map: map,
                             icon: {
                                 path: google.maps.SymbolPath.CIRCLE,
@@ -94,24 +100,8 @@
 
                         markers.push(marker);
                     });
-
                 })
-                .catch(err => console.error(err));
-        }
-
-        // EPSG:5179 → WGS84 변환 공식
-        function convert5179ToWgs84(x, y) {
-            const proj4Str5179 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs";
-            const proj4Str4326 = "+proj=longlat +datum=WGS84 +no_defs";
-
-            // 직접 구현 (proj4 없이 변환)
-            const dx = x - 200000;
-            const dy = y - 600000;
-
-            const lon = 127 + dx / (6378137 * Math.cos(38 * Math.PI/180));
-            const lat = 38 + dy / 6378137;
-
-            return { lat: lat, lng: lon };
+                .catch(err => console.error("VWorld API 오류:", err));
         }
 
         window.onload = initMap;
