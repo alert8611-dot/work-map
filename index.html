@@ -1,111 +1,102 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
     <meta charset="UTF-8" />
-    <title>도근점 20개 표시 지도</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>도근점 조회 지도</title>
+
     <style>
         #map {
             width: 100%;
             height: 100vh;
-            margin: 0;
-            padding: 0;
         }
     </style>
+
+    <!-- 구글 지도 API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw"></script>
 </head>
 
 <body>
-
-    <!-- Google Maps API -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw"></script>
-
     <div id="map"></div>
 
     <script>
-        // ---------------------------
-        // 🔑 VWorld 개발용 API 키
-        // ---------------------------
-        const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
+        const vworldKey = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";
 
-        let map;
-        let markers = [];
+        // 지도 초기 위치 (세종 금강)
+        const initialLat = 36.4983;
+        const initialLon = 127.265;
 
-        function initMap() {
+        // 지도 초기화
+        const map = new google.maps.Map(document.getElementById("map"), {
+            center: { lat: initialLat, lng: initialLon },
+            zoom: 15,
+            mapTypeId: "hybrid"
+        });
 
-            const center = { lat: 36.4800, lng: 127.2890 }; // 세종 기준
-
-            map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 14,
-                center: center,
-            });
-
-            // 첫 도근점 로드
-            loadGeogung(center);
-
-            // 지도 이동 후 중심 변경되면 다시 로드
-            google.maps.event.addListener(map, "idle", function () {
-                const c = map.getCenter();
-                loadGeogung({ lat: c.lat(), lng: c.lng() });
-            });
-        }
-
-        // -----------------------------------------
-        // 📌 도근점 20개 가져오기 (운영/개발 무관하게 작동)
-        // -----------------------------------------
-        function loadGeogung(center) {
-
-            const xmin = center.lng - 0.01;
-            const ymin = center.lat - 0.01;
-            const xmax = center.lng + 0.01;
-            const ymax = center.lat + 0.01;
-
+        // 도근점 불러오기 함수
+        async function loadDogeun() {
             const url =
-                `https://api.vworld.kr/req/wfs?` +
-                `key=${VWORLD_KEY}` +
-                `&service=WFS` +
-                `&version=2.0.0` +
-                `&request=GetFeature` +
-                `&typeNames=lp_pa_cbnd@korea` +
-                `&count=20` +
-                `&srsName=EPSG:4326` +
-                `&bbox=${xmin},${ymin},${xmax},${ymax},EPSG:4326`;
+                `https://api.vworld.kr/req/data?service=data&version=2.0&request=getfeature` +
+                `&key=${vworldKey}` +
+                `&format=json&size=20&page=1` +
+                `&data=LT_LGATEHIST&geometry=true` +
+                `&attrFilter=POINT_NO:like:*` +
+                `&domain=http://localhost`;
 
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
+            try {
+                const response = await fetch(url);
+                const json = await response.json();
 
-                    if (!data.response?.result?.featureCollection?.features) return;
+                if (!json.response || !json.response.result || !json.response.result.featureCollection) {
+                    console.error("도근점 API 구조 오류:", json);
+                    return;
+                }
 
-                    const features = data.response.result.featureCollection.features;
+                const features = json.response.result.featureCollection.features;
 
-                    // 기존 마커 제거
-                    markers.forEach(m => m.setMap(null));
-                    markers = [];
+                features.forEach((f) => {
+                    const coords = f.geometry.coordinates; // [x, y]
+                    const pointNo = f.properties.POINT_NO;
 
-                    // 마커 표시
-                    features.forEach(f => {
-                        const [lng, lat] = f.geometry.coordinates;
+                    // 좌표 변환(5179 → WGS84)
+                    const conv = convert5179ToWgs84(coords[0], coords[1]);
 
-                        const marker = new google.maps.Marker({
-                            position: { lat, lng },
-                            map: map,
-                            icon: {
-                                path: google.maps.SymbolPath.CIRCLE,
-                                fillColor: "red",
-                                fillOpacity: 1,
-                                strokeColor: "white",
-                                strokeWeight: 1,
-                                scale: 6
-                            }
-                        });
-
-                        markers.push(marker);
+                    // 빨간 동그라미 마커
+                    new google.maps.Marker({
+                        position: conv,
+                        map: map,
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            fillColor: "red",
+                            fillOpacity: 1,
+                            strokeColor: "white",
+                            strokeWeight: 1,
+                            scale: 6
+                        }
                     });
-                })
-                .catch(err => console.error("VWorld API 오류:", err));
+                });
+            } catch (err) {
+                console.error("도근점 API 오류:", err);
+            }
         }
 
-        window.onload = initMap;
-    </script>
+        // EPSG5179 → WGS84 변환 공식
+        function convert5179ToWgs84(x, y) {
+            const proj4str5179 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 " +
+                "+x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs";
+            const proj4str4326 = "+proj=longlat +datum=WGS84 +no_defs";
 
+            // proj4js 사용 없이 직접 계산
+            const dx = x - 200000;
+            const dy = y - 600000;
+
+            const lon = 127 + dx / (6378137 * Math.cos((38 * Math.PI) / 180));
+            const lat = 38 + dy / 6378137;
+
+            return { lat: lat, lng: lon };
+        }
+
+        loadDogeun();
+    </script>
 </body>
 </html>
