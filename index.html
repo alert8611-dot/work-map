@@ -2,101 +2,129 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>도근점 조회 지도</title>
-
     <style>
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
+        html, body { height: 100%; margin: 0; padding: 0; }
+        #map { height: 100%; }
     </style>
-
-    <!-- 구글 지도 API -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw"></script>
 </head>
 
 <body>
-    <div id="map"></div>
+<div id="map"></div>
 
-    <script>
-        const vworldKey = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";
+<script>
+// ===== 구글맵 초기 설정 =====
+function initMap() {
+    const start = { lat: 36.4801, lng: 127.2890 };
 
-        // 지도 초기 위치 (세종 금강)
-        const initialLat = 36.4983;
-        const initialLon = 127.265;
+    window.map = new google.maps.Map(document.getElementById("map"), {
+        center: start,
+        zoom: 16,
+        mapTypeId: google.maps.MapTypeId.SATELLITE,
+        gestureHandling: "greedy",
+    });
 
-        // 지도 초기화
-        const map = new google.maps.Map(document.getElementById("map"), {
-            center: { lat: initialLat, lng: initialLon },
-            zoom: 15,
-            mapTypeId: "hybrid"
-        });
+    // 줌/이동이 끝나면 도근점 다시 로드
+    map.addListener("idle", () => {
+        loadVworldData();
+    });
 
-        // 도근점 불러오기 함수
-        async function loadDogeun() {
-            const url =
-                `https://api.vworld.kr/req/data?service=data&version=2.0&request=getfeature` +
-                `&key=${vworldKey}` +
-                `&format=json&size=20&page=1` +
-                `&data=LT_LGATEHIST&geometry=true` +
-                `&attrFilter=POINT_NO:like:*` +
-                `&domain=http://localhost`;
+    loadVworldData();
+}
 
-            try {
-                const response = await fetch(url);
-                const json = await response.json();
 
-                if (!json.response || !json.response.result || !json.response.result.featureCollection) {
-                    console.error("도근점 API 구조 오류:", json);
-                    return;
-                }
 
-                const features = json.response.result.featureCollection.features;
+// ===== 브이월드 도근점 불러오기 =====
+function loadVworldData() {
+    const bounds = map.getBounds();
+    if (!bounds) return;
 
-                features.forEach((f) => {
-                    const coords = f.geometry.coordinates; // [x, y]
-                    const pointNo = f.properties.POINT_NO;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
 
-                    // 좌표 변환(5179 → WGS84)
-                    const conv = convert5179ToWgs84(coords[0], coords[1]);
+    // 구글맵 좌표(WGS84)를 브이월드용 EPSG:3857로 변환
+    const sw3857 = lonLatTo3857(sw.lng(), sw.lat());
+    const ne3857 = lonLatTo3857(ne.lng(), ne.lat());
 
-                    // 빨간 동그라미 마커
-                    new google.maps.Marker({
-                        position: conv,
-                        map: map,
-                        icon: {
-                            path: google.maps.SymbolPath.CIRCLE,
-                            fillColor: "red",
-                            fillOpacity: 1,
-                            strokeColor: "white",
-                            strokeWeight: 1,
-                            scale: 6
-                        }
-                    });
-                });
-            } catch (err) {
-                console.error("도근점 API 오류:", err);
-            }
+    const bbox = `${sw3857.x},${sw3857.y},${ne3857.x},${ne3857.y}`;
+
+    const apiKey = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";
+
+    const url = `https://api.vworld.kr/req/data?service=data` +
+                `&key=${apiKey}` +
+                `&request=GetFeature&data=LT_LM_CP_FC` +
+                `&format=application/json&size=20` +
+                `&bbox=${bbox}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(json => {
+            if (!json.response || !json.response.result) return;
+
+            clearMarkers();
+            const list = json.response.result.featureCollection.features;
+
+            list.forEach(f => {
+                const g = f.geometry;
+                if (!g) return;
+
+                let coord;
+                if (g.type === "Point") coord = g.coordinates;
+                else if (g.type === "MultiPoint") coord = g.coordinates[0];
+                else return;
+
+                const conv = epsg3857ToWgs84(coord[0], coord[1]);
+                addMarker(conv);
+            });
+        })
+        .catch(err => console.error(err));
+}
+
+
+
+// ====== EPSG 변환 ======
+function lonLatTo3857(lon, lat) {
+    const R = 6378137;
+    const x = R * (lon * Math.PI / 180);
+    const y = R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+    return { x, y };
+}
+
+function epsg3857ToWgs84(x, y) {
+    const lon = (x / 6378137) * 180 / Math.PI;
+    const lat = (Math.atan(Math.exp(y / 6378137)) - Math.PI / 4) * 360 / Math.PI;
+    return { lat, lng: lon };
+}
+
+
+
+// ===== Marker 관리 =====
+let markers = [];
+
+function addMarker(pos) {
+    const m = new google.maps.Marker({
+        position: pos,
+        map: map,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: "red",
+            fillOpacity: 1,
+            scale: 6,
+            strokeWeight: 1,
+            strokeColor: "white"
         }
+    });
+    markers.push(m);
+}
 
-        // EPSG5179 → WGS84 변환 공식
-        function convert5179ToWgs84(x, y) {
-            const proj4str5179 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 " +
-                "+x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs";
-            const proj4str4326 = "+proj=longlat +datum=WGS84 +no_defs";
+function clearMarkers() {
+    markers.forEach(m => m.setMap(null));
+    markers = [];
+}
+</script>
 
-            // proj4js 사용 없이 직접 계산
-            const dx = x - 200000;
-            const dy = y - 600000;
+<!-- ===== 구글맵 API 로드 ===== -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw&callback=initMap" async defer></script>
 
-            const lon = 127 + dx / (6378137 * Math.cos((38 * Math.PI) / 180));
-            const lat = 38 + dy / 6378137;
-
-            return { lat: lat, lng: lon };
-        }
-
-        loadDogeun();
-    </script>
 </body>
 </html>
