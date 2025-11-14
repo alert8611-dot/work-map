@@ -14,14 +14,15 @@
 </head>
 
 <body>
-    <!-- Google Maps JS API -->
+
+    <!-- Google Maps API (여기에 너의 실제 Google API 키 넣기) -->
     <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAP_KEY"></script>
 
     <div id="map"></div>
 
     <script>
         // ---------------------------
-        // 🔑 VWorld API Key 입력
+        // 🔑 VWorld API Key (너의 키로 변경)
         // ---------------------------
         const VWORLD_KEY = "YOUR_VWORLD_KEY";
 
@@ -31,4 +32,71 @@
         // 📌 Google Map 초기화
         // ---------------------------
         function initMap() {
-            const center = { lat: 37.5665, lng: 1
+            const center = { lat: 37.5665, lng: 126.9780 }; // 서울 기본 중심
+
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 14,
+                center: center,
+            });
+
+            // 최초 로딩 시 도근점 20개 표시
+            loadGeogung(center);
+
+            // 지도 움직임 끝났을 때(center 변경 시 자동 업데이트)
+            google.maps.event.addListener(map, "idle", function () {
+                const c = map.getCenter();
+                loadGeogung({ lat: c.lat(), lng: c.lng() });
+            });
+        }
+
+        // ---------------------------
+        // 📌 도근점 20개 불러오기 (VWorld WFS API)
+        // ---------------------------
+        function loadGeogung(center) {
+
+            const url = `https://api.vworld.kr/req/wfs?key=${VWORLD_KEY}&domain=http://localhost
+            &service=WFS&request=GetFeature&Version=2.0.0&typeNames=lp_pa_cbnd@korea
+            &count=20&srsName=EPSG:4326
+            &bbox=${center.lng - 0.01},${center.lat - 0.01},${center.lng + 0.01},${center.lat + 0.01},EPSG:4326`
+                .replace(/\s+/g, ""); // URL 줄바꿈 제거
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.response || !data.response.result || !data.response.result.featureCollection) return;
+
+                    const features = data.response.result.featureCollection.features;
+
+                    // 이전 마커 제거
+                    if (window.markers) {
+                        window.markers.forEach(m => m.setMap(null));
+                    }
+                    window.markers = [];
+
+                    // 새 마커 추가
+                    features.forEach(f => {
+                        const coords = f.geometry.coordinates;
+                        const lat = coords[1];
+                        const lng = coords[0];
+
+                        const marker = new google.maps.Marker({
+                            position: { lat, lng },
+                            map: map,
+                        });
+
+                        window.markers.push(marker);
+                    });
+                })
+                .catch(err => {
+                    console.error("VWorld API 오류:", err);
+                });
+        }
+
+        // ---------------------------
+        // 지도 로드
+        // ---------------------------
+        window.onload = initMap;
+    </script>
+
+</body>
+</html>
