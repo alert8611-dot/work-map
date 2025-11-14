@@ -21,109 +21,99 @@
     <div id="map"></div>
 
     <script>
-        // ------------------------------------------------
-        //  VWORLD API KEY (네 키 그대로 적용됨)
-        // ------------------------------------------------
         const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
 
         let map;
-        window.markers = [];
+        let markers = [];
 
-        // ------------------------------------------------
-        //  지도 초기화
-        // ------------------------------------------------
         function initMap() {
-            const center = { lat: 37.5665, lng: 126.9780 }; // 서울 중심
+            const center = { lat: 36.4800, lng: 127.2890 };
 
             map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 14,
+                zoom: 15,
                 center: center,
+                mapTypeId: "hybrid"
             });
 
-            // 첫 로딩 시 도근점 표시
             loadGeogung(center);
 
-            // 지도 이동 후 idle 이벤트로 갱신
             google.maps.event.addListener(map, "idle", function () {
                 const c = map.getCenter();
                 loadGeogung({ lat: c.lat(), lng: c.lng() });
             });
         }
 
-        // ------------------------------------------------
-        //  도근점(WFS) 불러오기
-        // ------------------------------------------------
         function loadGeogung(center) {
-
-            // bbox 계산(약 1km 범위)
-            const minLng = center.lng - 0.01;
-            const minLat = center.lat - 0.01;
-            const maxLng = center.lng + 0.01;
-            const maxLat = center.lat + 0.01;
-
             const url = `
                 https://api.vworld.kr/req/wfs?
                 key=${VWORLD_KEY}
-                &domain=alert8611-dot.github.io
                 &service=WFS
-                &version=2.0.0
                 &request=GetFeature
-                &typename=lp_pa_cbnd
-                &output=json
+                &version=2.0.0
+                &typeNames=lp_pa_cbnd
                 &count=20
-                &srsName=EPSG:4326
-                &bbox=${minLng},${minLat},${maxLng},${maxLat},EPSG:4326
+                &srsName=EPSG:5179
+                &bbox=${center.lng - 500},${center.lat - 500},
+                      ${center.lng + 500},${center.lat + 500},
+                      EPSG:5179
             `.replace(/\s+/g, "");
 
             fetch(url)
                 .then(res => res.json())
                 .then(json => {
-                    let features;
 
-                    try {
-                        features = json.response.result.featureCollection.features;
-                    } catch (e) {
-                        console.warn("도근점 없음 or API 응답 오류", e);
+                    if (!json.response || !json.response.result)
                         return;
-                    }
 
-                    // 기존 마커 제거
-                    window.markers.forEach(m => m.setMap(null));
-                    window.markers = [];
+                    const features = json.response.result.featureCollection.features;
 
-                    // 빨간 동그라미 스타일
-                    const redCircle = {
-                        path: google.maps.SymbolPath.CIRCLE,
-                        fillColor: "red",
-                        fillOpacity: 1,
-                        strokeColor: "white",
-                        strokeWeight: 1,
-                        scale: 6,
-                    };
+                    markers.forEach(m => m.setMap(null));
+                    markers = [];
 
-                    // 새 마커 생성
                     features.forEach(f => {
-                        const coords = f.geometry.coordinates;
-                        const lng = coords[0];
-                        const lat = coords[1];
+                        if (!f.geometry || !f.geometry.coordinates)
+                            return;
+
+                        const [x, y] = f.geometry.coordinates;
+
+                        // EPSG:5179 → EPSG:4326 변환(중부원점)
+                        const conv = convert5179ToWgs84(x, y);
 
                         const marker = new google.maps.Marker({
-                            position: { lat, lng },
-                            map,
-                            icon: redCircle
+                            position: conv,
+                            map: map,
+                            icon: {
+                                path: google.maps.SymbolPath.CIRCLE,
+                                fillColor: "red",
+                                fillOpacity: 1,
+                                strokeColor: "white",
+                                strokeWeight: 1,
+                                scale: 6
+                            }
                         });
 
-                        window.markers.push(marker);
+                        markers.push(marker);
                     });
+
                 })
-                .catch(err => {
-                    console.error("WFS 요청 오류:", err);
-                });
+                .catch(err => console.error(err));
         }
 
-        // ------------------------------------------------
-        //  페이지 로드시 지도 생성
-        // ------------------------------------------------
+        // EPSG:5179 → WGS84 변환 공식
+        function convert5179ToWgs84(x, y) {
+            const proj4Str5179 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs";
+            const proj4Str4326 = "+proj=longlat +datum=WGS84 +no_defs";
+
+            // 직접 구현 (proj4 없이 변환)
+            const dx = x - 200000;
+            const dy = y - 600000;
+
+            const lon = 127 + dx / (6378137 * Math.cos(38 * Math.PI/180));
+            const lat = 38 + dy / 6378137;
+
+            return { lat: lat, lng: lon };
+        }
+
         window.onload = initMap;
     </script>
 
