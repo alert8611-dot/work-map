@@ -15,88 +15,93 @@
 
 <body>
 
-    <!-- Google Maps API (너의 API 키 그대로 적용됨) -->
+    <!-- Google Maps API -->
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw"></script>
 
     <div id="map"></div>
 
     <script>
-        // ---------------------------
-        // 🔑 VWorld API Key (너의 키 그대로)
-        // ---------------------------
+        // ------------------------------------------------
+        //  VWORLD API KEY (네 키 그대로 적용됨)
+        // ------------------------------------------------
         const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
 
         let map;
+        window.markers = [];
 
-        // ---------------------------
-        // 📌 구글 지도 초기화
-        // ---------------------------
+        // ------------------------------------------------
+        //  지도 초기화
+        // ------------------------------------------------
         function initMap() {
-
-            const center = { lat: 37.5665, lng: 126.9780 }; // 서울 시청
+            const center = { lat: 37.5665, lng: 126.9780 }; // 서울 중심
 
             map = new google.maps.Map(document.getElementById("map"), {
                 zoom: 14,
                 center: center,
-                mapTypeId: "roadmap"
             });
 
+            // 첫 로딩 시 도근점 표시
             loadGeogung(center);
 
-            // 지도 이동 후 중심 바뀌면 갱신
+            // 지도 이동 후 idle 이벤트로 갱신
             google.maps.event.addListener(map, "idle", function () {
                 const c = map.getCenter();
                 loadGeogung({ lat: c.lat(), lng: c.lng() });
             });
         }
 
-        // ---------------------------
-        // 📌 도근점 WFS 20개 불러오기
-        // ---------------------------
+        // ------------------------------------------------
+        //  도근점(WFS) 불러오기
+        // ------------------------------------------------
         function loadGeogung(center) {
 
+            // bbox 계산(약 1km 범위)
+            const minLng = center.lng - 0.01;
+            const minLat = center.lat - 0.01;
+            const maxLng = center.lng + 0.01;
+            const maxLat = center.lat + 0.01;
+
             const url = `
-                https://api.vworld.kr/req/wfs
-                ?key=${VWORLD_KEY}
+                https://api.vworld.kr/req/wfs?
+                key=${VWORLD_KEY}
+                &domain=alert8611-dot.github.io
                 &service=WFS
-                &request=GetFeature
                 &version=2.0.0
-                &typeNames=lp_pa_cbnd
+                &request=GetFeature
+                &typename=lp_pa_cbnd
+                &output=json
                 &count=20
                 &srsName=EPSG:4326
-                &bbox=${center.lng - 0.01},${center.lat - 0.01},
-                      ${center.lng + 0.01},${center.lat + 0.01},
-                      EPSG:4326
+                &bbox=${minLng},${minLat},${maxLng},${maxLat},EPSG:4326
             `.replace(/\s+/g, "");
 
             fetch(url)
                 .then(res => res.json())
-                .then(data => {
+                .then(json => {
+                    let features;
 
-                    if (!data.response || !data.response.result || !data.response.result.featureCollection) {
-                        console.warn("⚠ 도근점 데이터 없음 or WFS 오류");
+                    try {
+                        features = json.response.result.featureCollection.features;
+                    } catch (e) {
+                        console.warn("도근점 없음 or API 응답 오류", e);
                         return;
                     }
 
-                    const features = data.response.result.featureCollection.features;
-
-                    // 이전 마커 삭제
-                    if (window.markers) {
-                        window.markers.forEach(m => m.setMap(null));
-                    }
+                    // 기존 마커 제거
+                    window.markers.forEach(m => m.setMap(null));
                     window.markers = [];
 
-                    // 빨간 동그라미 아이콘
+                    // 빨간 동그라미 스타일
                     const redCircle = {
                         path: google.maps.SymbolPath.CIRCLE,
                         fillColor: "red",
                         fillOpacity: 1,
                         strokeColor: "white",
                         strokeWeight: 1,
-                        scale: 6
+                        scale: 6,
                     };
 
-                    // 새 마커 표시
+                    // 새 마커 생성
                     features.forEach(f => {
                         const coords = f.geometry.coordinates;
                         const lng = coords[0];
@@ -104,7 +109,7 @@
 
                         const marker = new google.maps.Marker({
                             position: { lat, lng },
-                            map: map,
+                            map,
                             icon: redCircle
                         });
 
@@ -112,11 +117,13 @@
                     });
                 })
                 .catch(err => {
-                    console.error("❌ VWorld API 오류:", err);
+                    console.error("WFS 요청 오류:", err);
                 });
         }
 
-        // 페이지 로드시 실행
+        // ------------------------------------------------
+        //  페이지 로드시 지도 생성
+        // ------------------------------------------------
         window.onload = initMap;
     </script>
 
