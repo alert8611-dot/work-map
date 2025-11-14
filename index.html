@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>도근점 표시 지도</title>
+    <title>도근점 20개 표시 지도</title>
     <style>
         #map {
             width: 100%;
@@ -15,45 +15,54 @@
 
 <body>
 
-    <!-- Google Maps API -->
+    <!-- Google Maps API (너의 API 키 그대로 적용됨) -->
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw"></script>
 
     <div id="map"></div>
 
     <script>
+        // ---------------------------
+        // 🔑 VWorld API Key (너의 키 그대로)
+        // ---------------------------
         const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
 
         let map;
 
+        // ---------------------------
+        // 📌 구글 지도 초기화
+        // ---------------------------
         function initMap() {
 
-            const center = { lat: 37.5665, lng: 126.9780 };
+            const center = { lat: 37.5665, lng: 126.9780 }; // 서울 시청
 
             map = new google.maps.Map(document.getElementById("map"), {
                 zoom: 14,
                 center: center,
+                mapTypeId: "roadmap"
             });
 
-            loadGeodetic(center);
+            loadGeogung(center);
 
+            // 지도 이동 후 중심 바뀌면 갱신
             google.maps.event.addListener(map, "idle", function () {
                 const c = map.getCenter();
-                loadGeodetic({ lat: c.lat(), lng: c.lng() });
+                loadGeogung({ lat: c.lat(), lng: c.lng() });
             });
         }
 
-        // 🔥 도근점 가져오기
-        function loadGeodetic(center) {
+        // ---------------------------
+        // 📌 도근점 WFS 20개 불러오기
+        // ---------------------------
+        function loadGeogung(center) {
 
             const url = `
-                https://api.vworld.kr/req/wfs?
-                key=${VWORLD_KEY}
-                &domain=alert8611-dot.github.io
+                https://api.vworld.kr/req/wfs
+                ?key=${VWORLD_KEY}
                 &service=WFS
-                &version=2.0.0
                 &request=GetFeature
-                &typeNames=LT_C_GAMJUNG_POINT
-                &count=50
+                &version=2.0.0
+                &typeNames=lp_pa_cbnd
+                &count=20
                 &srsName=EPSG:4326
                 &bbox=${center.lng - 0.01},${center.lat - 0.01},
                       ${center.lng + 0.01},${center.lat + 0.01},
@@ -64,15 +73,17 @@
                 .then(res => res.json())
                 .then(data => {
 
-                    if (!data.response?.result?.featureCollection?.features) {
-                        console.log("도근점 없음");
+                    if (!data.response || !data.response.result || !data.response.result.featureCollection) {
+                        console.warn("⚠ 도근점 데이터 없음 or WFS 오류");
                         return;
                     }
 
                     const features = data.response.result.featureCollection.features;
 
-                    // 기존 마커 삭제
-                    if (window.markers) window.markers.forEach(m => m.setMap(null));
+                    // 이전 마커 삭제
+                    if (window.markers) {
+                        window.markers.forEach(m => m.setMap(null));
+                    }
                     window.markers = [];
 
                     // 빨간 동그라미 아이콘
@@ -85,7 +96,7 @@
                         scale: 6
                     };
 
-                    // 새 마커 추가
+                    // 새 마커 표시
                     features.forEach(f => {
                         const coords = f.geometry.coordinates;
                         const lng = coords[0];
@@ -101,15 +112,13 @@
                     });
                 })
                 .catch(err => {
-                    console.error("VWorld API 오류:", err);
+                    console.error("❌ VWorld API 오류:", err);
                 });
         }
 
+        // 페이지 로드시 실행
         window.onload = initMap;
     </script>
 
 </body>
 </html>
-
-</html>
-
