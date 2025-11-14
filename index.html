@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>도근점 20개 표시 지도</title>
+    <title>도근점 표시 지도</title>
     <style>
         #map {
             width: 100%;
@@ -21,7 +21,6 @@
     <div id="map"></div>
 
     <script>
-        // VWorld Key
         const VWORLD_KEY = "7E3F201-5A0A-3513-8DC6-6E831632BDC4";
 
         let map;
@@ -43,7 +42,7 @@
             });
         }
 
-        // 도근점 가져오기
+        // 🔥 도근점 가져오기
         function loadGeodetic(center) {
 
             const url = `
@@ -51,10 +50,10 @@
                 key=${VWORLD_KEY}
                 &domain=alert8611-dot.github.io
                 &service=WFS
-                &request=GetFeature
                 &version=2.0.0
-                &typeNames=lt_c_ug_point
-                &count=20
+                &request=GetFeature
+                &typeNames=LT_C_GAMJUNG_POINT
+                &count=50
                 &srsName=EPSG:4326
                 &bbox=${center.lng - 0.01},${center.lat - 0.01},
                       ${center.lng + 0.01},${center.lat + 0.01},
@@ -65,21 +64,37 @@
                 .then(res => res.json())
                 .then(data => {
 
-                    if (!data.response?.result?.featureCollection?.features) return;
+                    if (!data.response?.result?.featureCollection?.features) {
+                        console.log("도근점 없음");
+                        return;
+                    }
 
                     const features = data.response.result.featureCollection.features;
 
+                    // 기존 마커 삭제
                     if (window.markers) window.markers.forEach(m => m.setMap(null));
                     window.markers = [];
 
+                    // 빨간 동그라미 아이콘
+                    const redCircle = {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        fillColor: "red",
+                        fillOpacity: 1,
+                        strokeColor: "white",
+                        strokeWeight: 1,
+                        scale: 6
+                    };
+
+                    // 새 마커 추가
                     features.forEach(f => {
-                        const coords = f.geometry.coordinates;  
+                        const coords = f.geometry.coordinates;
                         const lng = coords[0];
                         const lat = coords[1];
 
                         const marker = new google.maps.Marker({
                             position: { lat, lng },
                             map: map,
+                            icon: redCircle
                         });
 
                         window.markers.push(marker);
@@ -95,3 +110,6 @@
 
 </body>
 </html>
+
+</html>
+
