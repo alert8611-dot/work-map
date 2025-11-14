@@ -1,130 +1,105 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8" />
-    <title>도근점 조회 지도</title>
+    <meta charset="UTF-8">
+    <title>도근점 20개 표시 지도</title>
     <style>
         html, body { height: 100%; margin: 0; padding: 0; }
-        #map { height: 100%; }
+        #map { width: 100%; height: 100%; }
     </style>
 </head>
-
 <body>
+
 <div id="map"></div>
 
 <script>
-// ===== 구글맵 초기 설정 =====
-function initMap() {
-    const start = { lat: 36.4801, lng: 127.2890 };
+// =======================
+// 1) 브이월드 도근점 데이터 요청
+// =======================
+async function fetchDogeunData() {
+    const apiKey = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";  // 민도운님 브이월드 키
 
-    window.map = new google.maps.Map(document.getElementById("map"), {
-        center: start,
-        zoom: 16,
-        mapTypeId: google.maps.MapTypeId.SATELLITE,
-        gestureHandling: "greedy",
-    });
+    const url = `https://api.vworld.kr/ned/data/dgprecise?service=DGPrePrecise&request=GetFeature&key=${apiKey}&format=json&size=20&page=1`;
 
-    // 줌/이동이 끝나면 도근점 다시 로드
-    map.addListener("idle", () => {
-        loadVworldData();
-    });
+    const response = await fetch(url);
+    const json = await response.json();
 
-    loadVworldData();
+    if (!json || !json.response || !json.response.result || !json.response.result.featureCollection)
+        return [];
+
+    return json.response.result.featureCollection.features;
 }
 
+// =======================
+// 2) EPSG:5179 → WGS84 변환
+// =======================
+function convert5179ToWGS84(x, y) {
+    const proj4_5179 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs";
+    const proj4_4326 = "+proj=longlat +datum=WGS84 +no_defs";
 
-
-// ===== 브이월드 도근점 불러오기 =====
-function loadVworldData() {
-    const bounds = map.getBounds();
-    if (!bounds) return;
-
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-
-    // 구글맵 좌표(WGS84)를 브이월드용 EPSG:3857로 변환
-    const sw3857 = lonLatTo3857(sw.lng(), sw.lat());
-    const ne3857 = lonLatTo3857(ne.lng(), ne.lat());
-
-    const bbox = `${sw3857.x},${sw3857.y},${ne3857.x},${ne3857.y}`;
-
-    const apiKey = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";
-
-    const url = `https://api.vworld.kr/req/data?service=data` +
-                `&key=${apiKey}` +
-                `&request=GetFeature&data=LT_LM_CP_FC` +
-                `&format=application/json&size=20` +
-                `&bbox=${bbox}`;
-
-    fetch(url)
-        .then(r => r.json())
-        .then(json => {
-            if (!json.response || !json.response.result) return;
-
-            clearMarkers();
-            const list = json.response.result.featureCollection.features;
-
-            list.forEach(f => {
-                const g = f.geometry;
-                if (!g) return;
-
-                let coord;
-                if (g.type === "Point") coord = g.coordinates;
-                else if (g.type === "MultiPoint") coord = g.coordinates[0];
-                else return;
-
-                const conv = epsg3857ToWgs84(coord[0], coord[1]);
-                addMarker(conv);
-            });
-        })
-        .catch(err => console.error(err));
+    const result = proj4(proj4_5179, proj4_4326, [x, y]);
+    return { lng: result[0], lat: result[1] };
 }
 
-
-
-// ====== EPSG 변환 ======
-function lonLatTo3857(lon, lat) {
-    const R = 6378137;
-    const x = R * (lon * Math.PI / 180);
-    const y = R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
-    return { x, y };
-}
-
-function epsg3857ToWgs84(x, y) {
-    const lon = (x / 6378137) * 180 / Math.PI;
-    const lat = (Math.atan(Math.exp(y / 6378137)) - Math.PI / 4) * 360 / Math.PI;
-    return { lat, lng: lon };
-}
-
-
-
-// ===== Marker 관리 =====
+// =======================
+// 3) 지도 초기화
+// =======================
+let map;
 let markers = [];
 
-function addMarker(pos) {
-    const m = new google.maps.Marker({
-        position: pos,
-        map: map,
-        icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            fillColor: "red",
-            fillOpacity: 1,
-            scale: 6,
-            strokeWeight: 1,
-            strokeColor: "white"
-        }
+function initMap() {
+    map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 36.5, lng: 127.5 },
+        zoom: 13,
+        mapTypeId: "hybrid"
     });
-    markers.push(m);
+
+    loadDogeunPoints();
 }
 
-function clearMarkers() {
+// =======================
+// 4) 도근점 표시
+// =======================
+async function loadDogeunPoints() {
+    const data = await fetchDogeunData();
+
+    // 빨간 동그라미 아이콘 (기존보다 2배 크게, 선명하게)
+    const redcircle = {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: "#ff0000",
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+        scale: 12   // 기존 6 → 12 로 2배 확대
+    };
+
+    // 기존 마커 제거
     markers.forEach(m => m.setMap(null));
     markers = [];
+
+    data.forEach(f => {
+        const coords = f.geometry.coordinates; // EPSG5179 (x,y)
+        const conv = convert5179ToWGS84(coords[0], coords[1]);
+
+        const marker = new google.maps.Marker({
+            position: conv,
+            map: map,
+            icon: redcircle
+        });
+
+        markers.push(marker);
+    });
 }
+
 </script>
 
-<!-- ===== 구글맵 API 로드 ===== -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw&callback=initMap" async defer></script>
+<!-- proj4 변환 라이브러리 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.6/proj4.js"></script>
+
+<!-- Google 지도 JS API (민도운님 키 포함) -->
+<script async
+src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD9BIK9PhwIvEL5uzIlGtTh2iK8piDn2pw&callback=initMap">
+</script>
 
 </body>
 </html>
