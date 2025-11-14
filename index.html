@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>도근점 20개 표시 지도</title>
+  <style>
+    #map {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+
+  <!-- Google Maps JS API -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAP_KEY"></script>
+
+  <script>
+    // VWorld API Key
+    const VWORLD_KEY = "7E3F2D01-5A0A-3513-8DC6-6E831632BDC4";
+
+    let map;
+
+    function initMap() {
+      const center = { lat: 37.5665, lng: 126.9780 }; // 초기 서울 중심
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 14,
+        center: center,
+      });
+
+      // 최초 로딩
+      loadDegunjum(center);
+
+      // 🔥 지도를 움직이고 멈추면(center 변경되면) 자동 업데이트
+      google.maps.event.addListener(map, "idle", function () {
+        const c = map.getCenter();
+        loadDegunjum({ lat: c.lat(), lng: c.lng() });
+      });
+    }
+
+    async function loadDegunjum(center) {
+      const delta = 0.01;
+
+      const bbox = [
+        center.lng - delta,
+        center.lat - delta,
+        center.lng + delta,
+        center.lat + delta
+      ].join(",");
+
+      const url = `https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature&format=json&type=LT_LM_DEGN&bbox=${bbox}&key=${VWORLD_KEY}`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.response || !data.response.result) {
+          console.log("도근점 없음");
+          return;
+        }
+
+        const features = data.response.result.featureCollection.features;
+
+        // 🔥 기존 마커 제거 → 지도 깔끔하게 유지하려면 여기에 marker 배열 관리 추가 가능
+
+        const points = features.slice(0, 20); // 최대 20개
+
+        points.forEach((f) => {
+          const [lng, lat] = f.geometry.coordinates;
+
+          new google.maps.Marker({
+            position: { lat, lng },
+            map: map,
+            title: "도근점",
+          });
+        });
+      } catch (e) {
+        console.error("API 오류:", e);
+      }
+    }
+
+    window.onload = initMap;
+  </script>
+</head>
+
+<body>
+  <div id="map"></div>
+</body>
+</html>
